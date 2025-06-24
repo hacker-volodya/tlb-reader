@@ -9,7 +9,7 @@ describe('Cell parsing', () => {
         const builder = new Builder();
         builder.storeBit(1);
         const cell = builder.endCell();
-        const res = parseCell(cell, program, 'bool_true');
+        const res = parseCell(cell, program, 'Bool');
         expect(res).toEqual({});
     });
 
