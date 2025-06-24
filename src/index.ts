@@ -126,7 +126,7 @@ function parseDecl(
         }
     }
     try {
-        const result = parseFields(slice, decl.fields, program, localEnv);
+        const result = parseFields(slice, decl.fields, program, localEnv, {});
         const tag = decl.constructorDef.tag || '';
         result['_id'] = decl.constructorDef.name + tag;
         return result;
@@ -175,6 +175,7 @@ function parseFields(
     fields: FieldDefinition[],
     program: Program,
     env: Record<string, TypeExpr>,
+    parentValues: Record<string, any> = {},
 ): any {
     const res: any = {};
     for (const f of fields) {
@@ -182,7 +183,7 @@ function parseFields(
             continue;
         } else if (f instanceof FieldNamedDef) {
             try {
-                res[f.name] = parseExpr(slice, f.expr, program, env);
+                res[f.name] = parseExpr(slice, f.expr, program, env, { ...parentValues, ...res });
             } catch (e: any) {
                 if (e instanceof ParseError) {
                     res[f.name] = e.partial;
@@ -192,7 +193,7 @@ function parseFields(
             }
         } else if (f instanceof FieldExprDef) {
             try {
-                res['_'] = parseExpr(slice, f.expr, program, env);
+                res['_'] = parseExpr(slice, f.expr, program, env, { ...parentValues, ...res });
             } catch (e: any) {
                 if (e instanceof ParseError) {
                     res['_'] = e.partial;
@@ -203,7 +204,7 @@ function parseFields(
         } else if (f instanceof FieldAnonymousDef) {
             const subSlice = f.isRef ? slice.loadRef().beginParse() : slice;
             try {
-                res[f.name || '_'] = parseFields(subSlice, f.fields, program, env);
+                res[f.name || '_'] = parseFields(subSlice, f.fields, program, env, { ...parentValues, ...res });
             } catch (e: any) {
                 if (e instanceof ParseError) {
                     res[f.name || '_'] = e.partial;
@@ -221,8 +222,9 @@ function parseAnon(
     fields: FieldDefinition[],
     program: Program,
     env: Record<string, TypeExpr>,
+    parentValues: Record<string, any> = {},
 ): any {
-    return parseFields(slice, fields, program, env);
+    return parseFields(slice, fields, program, env, parentValues);
 }
 
 function resolveTypeExpr(expr: TypeExpr, env: Record<string, TypeExpr>): TypeExpr {
@@ -241,11 +243,35 @@ function parseExpr(
     expr: CondExpr | TypeExpr,
     program: Program,
     env: Record<string, TypeExpr>,
+    values: Record<string, any> = {},
 ): any {
     try {
+        if (expr instanceof CondExpr) {
+            let condValue: any;
+            if (expr.left instanceof NameExpr && Object.prototype.hasOwnProperty.call(values, expr.left.name)) {
+                condValue = values[expr.left.name];
+            } else {
+                condValue = parseExpr(slice, expr.left, program, env, values);
+            }
+            let flag: boolean;
+            if (expr.dotExpr !== null && expr.dotExpr !== undefined) {
+                try {
+                    const num = BigInt(condValue);
+                    flag = ((num >> BigInt(expr.dotExpr)) & 1n) === 1n;
+                } catch {
+                    flag = false;
+                }
+            } else {
+                flag = Boolean(condValue);
+            }
+            if (!flag) {
+                return undefined;
+            }
+            return parseExpr(slice, expr.condExpr, program, env, values);
+        }
         if (expr instanceof CellRefExpr) {
             const ref = slice.loadRef();
-            return parseExpr(ref.beginParse(), expr.expr, program, env);
+            return parseExpr(ref.beginParse(), expr.expr, program, env, values);
         }
         if (expr instanceof BuiltinOneArgExpr) {
             if (expr.name === '##' && expr.arg instanceof NumberExpr) {
@@ -264,7 +290,10 @@ function parseExpr(
         if (expr instanceof NameExpr) {
             const n = expr.name;
             if (env[n]) {
-                return parseExpr(slice, env[n], program, env);
+                return parseExpr(slice, env[n], program, env, values);
+            }
+            if (Object.prototype.hasOwnProperty.call(values, n)) {
+                return values[n];
             }
             if (n.startsWith('int')) {
                 const b = parseInt(n.slice(3), 10);

@@ -53,6 +53,28 @@ describe('Cell parsing', () => {
         expect(res.value.toString()).toBe('7');
     });
 
+    test('conditional field parsing', () => {
+        const tlb4 = 'foo$_ flag:Bool value:flag?uint8 = Foo;';
+        const defs = parseTLB(tlb4);
+
+        const b1 = new Builder();
+        b1.storeBit(1); // flag
+        b1.storeUint(17, 8);
+        const c1 = b1.endCell();
+
+        const r1 = parseCell(c1, defs, 'foo');
+        expect(r1.flag).toBe(true);
+        expect(r1.value.toString()).toBe('17');
+
+        const b2 = new Builder();
+        b2.storeBit(0); // flag
+        const c2 = b2.endCell();
+
+        const r2 = parseCell(c2, defs, 'foo');
+        expect(r2.flag).toBe(false);
+        expect(r2.value).toBeUndefined();
+    });
+
     test('partial result on failure', () => {
         const tlb2 = `inner$100 value:uint32 = Inner; outer$101 inner:^Inner flag:Bool = Outer;`;
         const defs = parseTLB(tlb2);
