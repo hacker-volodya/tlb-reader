@@ -81,7 +81,10 @@ function parseDecl(
             }
         }
     }
-    return parseFields(slice, decl.fields, program, localEnv);
+    const result = parseFields(slice, decl.fields, program, localEnv);
+    const tag = decl.constructorDef.tag || '';
+    result['_id'] = decl.constructorDef.name + tag;
+    return result;
 }
 
 function matchTag(slice: Slice, tag: string | null): boolean {

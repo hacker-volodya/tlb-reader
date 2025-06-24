@@ -11,6 +11,7 @@ const program = parseTLB(tlbText);
 // pass either a constructor or combinator name
 const data = parseCell(cell, program, 'Block');
 console.log(data);
+// every parsed object now includes an `_id` field with the constructor name
 ```
 
 ## Testing
