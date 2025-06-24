@@ -205,14 +205,26 @@ function parseFields(
             }
         } else if (f instanceof FieldAnonymousDef) {
             const subSlice = f.isRef ? slice.loadRef().beginParse() : slice;
-            try {
-                res[f.name || '_'] = parseFields(subSlice, f.fields, program, env, { ...parentValues, ...res });
-            } catch (e: any) {
-                if (e instanceof ParseError) {
-                    res[f.name || '_'] = e.partial;
-                    throw new ParseError(e.message, res, e.remaining);
+            if (f.isRef) {
+                try {
+                    res[f.name || '_'] = parseFields(subSlice, f.fields, program, env, { ...parentValues, ...res });
+                } catch (e: any) {
+                    if (e instanceof ParseError) {
+                        res[f.name || '_'] = { ...e.partial, _error: e.message, _remaining: e.remaining.clone() };
+                    } else {
+                        res[f.name || '_'] = { _error: String(e), _remaining: subSlice.clone() };
+                    }
                 }
-                throw new ParseError(String(e), res, subSlice.clone());
+            } else {
+                try {
+                    res[f.name || '_'] = parseFields(subSlice, f.fields, program, env, { ...parentValues, ...res });
+                } catch (e: any) {
+                    if (e instanceof ParseError) {
+                        res[f.name || '_'] = e.partial;
+                        throw new ParseError(e.message, res, e.remaining);
+                    }
+                    throw new ParseError(String(e), res, subSlice.clone());
+                }
             }
         }
     }
@@ -316,8 +328,15 @@ function parseExpr(
             return parseExpr(slice, expr.condExpr, program, env, values);
         }
         if (expr instanceof CellRefExpr) {
-            const ref = slice.loadRef();
-            return parseExpr(ref.beginParse(), expr.expr, program, env, values);
+            const refSlice = slice.loadRef().beginParse();
+            try {
+                return parseExpr(refSlice, expr.expr, program, env, values);
+            } catch (e: any) {
+                if (e instanceof ParseError) {
+                    return { ...e.partial, _error: e.message, _remaining: e.remaining.clone() };
+                }
+                return { _error: String(e), _remaining: refSlice.clone() };
+            }
         }
         if (expr instanceof BuiltinOneArgExpr) {
             if (expr.name === '##' && expr.arg instanceof NumberExpr) {

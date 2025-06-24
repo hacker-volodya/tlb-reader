@@ -97,6 +97,28 @@ describe('Cell parsing', () => {
         expect(res.result.flag).toBeUndefined();
     });
 
+    test('continue parsing after ref failure', () => {
+        const tlb2 = `inner$100 value:uint8 flag:Bool = Inner; outer$101 inner:^Inner other:uint8 = Outer;`;
+        const defs = parseTLB(tlb2);
+
+        const badInnerBuilder = new Builder();
+        badInnerBuilder.storeUint(0b100, 3);
+        badInnerBuilder.storeUint(7, 8); // missing flag bit
+        const badInner = badInnerBuilder.endCell();
+
+        const outerBuilder = new Builder();
+        outerBuilder.storeUint(0b101, 3);
+        outerBuilder.storeRef(badInner);
+        outerBuilder.storeUint(9, 8);
+        const outer = outerBuilder.endCell();
+
+        const res = parseCell(outer, defs, 'Outer');
+        expect(res._id).toBe('outer$101');
+        expect(res.other.toString()).toBe('9');
+        expect(res.inner._error).toBeDefined();
+        expect(res.inner._remaining).toBeDefined();
+    });
+
     test('parse block', () => {
         const tlb = fs.readFileSync(path.resolve(fixturesDir, 'block.tlb'), 'utf-8');
         const boc = fs.readFileSync(path.resolve(fixturesDir, 'block.boc'));
