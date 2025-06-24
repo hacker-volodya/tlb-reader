@@ -1,4 +1,5 @@
-import { Builder, Cell, Slice } from '@ton/core';
+import { beginCell, Builder, Cell, Slice } from '@ton/core';
+import { serializeDict } from '@ton/core/dist/dict/serializeDict';
 import { parseCell, parseTLB, tryParseCell } from '../src';
 import fs from 'fs';
 import path from 'path';
@@ -6,10 +7,9 @@ import path from 'path';
 const fixturesDir = path.resolve(__dirname, 'fixtures');
 
 describe('Cell parsing', () => {
-    const tlb = 'bool_true$1 = Bool;';
-    const program = parseTLB(tlb);
-
     test('parse simple bool cell', () => {
+        const tlb = 'bool_true$1 = Bool;';
+        const program = parseTLB(tlb);
         const builder = new Builder();
         builder.storeBit(1);
         const cell = builder.endCell();
@@ -149,12 +149,44 @@ describe('Cell parsing', () => {
         const cell = Cell.fromBoc(boc)[0];
         const program = parseTLB(tlb);
         const res = tryParseCell(cell, program, 'Block');
-        console.log(JSON.stringify(res, (k, v) => {
-            if (typeof v == 'bigint') return v.toString();
-            if (v instanceof Slice) return v.asCell().toBoc().toString('base64');
-            if (v instanceof Cell) return v.toBoc().toString('base64');
-            return v;
-        }, 4));
+        // console.log(JSON.stringify(res, (k, v) => {
+        //     if (typeof v == 'bigint') return v.toString();
+        //     if (v instanceof Slice) return v.asCell().toBoc().toString('base64');
+        //     if (v instanceof Cell) return v.toBoc().toString('base64');
+        //     return v;
+        // }, 4));
         expect(res.result._id).toBe('block#11ef55aa');
+    });
+});
+
+describe('Dictionary parsing', () => {
+    const tlb = fs.readFileSync(path.resolve(fixturesDir, 'block.tlb'), 'utf-8') + '\ndict_test$_ dict:(HashmapE 16 uint16) = DictTest;';
+    const program = parseTLB(tlb);
+
+    test('parse non-empty dictionary', () => {
+        const map = new Map<bigint, number>();
+        map.set(1n, 10);
+        map.set(2n, 20);
+
+        const dictBuilder = beginCell();
+        serializeDict(map, 16, (v: number, b: Builder) => b.storeUint(v, 16), dictBuilder);
+        const root = dictBuilder.endCell();
+
+        const builder = beginCell();
+        builder.storeBit(1);
+        builder.storeRef(root);
+        const cell = builder.endCell();
+
+        const res = parseCell(cell, program, 'dict_test');
+        console.log(res);
+    });
+
+    test('parse empty dictionary', () => {
+        const builder = beginCell();
+        builder.storeBit(0);
+        const cell = builder.endCell();
+
+        const res = parseCell(cell, program, 'dict_test');
+        expect(res.dict.size).toBe(0);
     });
 });
