@@ -1,5 +1,9 @@
-import { Builder } from '@ton/core';
+import { Builder, Cell } from '@ton/core';
 import { parseCell, parseTLB } from '../src';
+import fs from 'fs';
+import path from 'path';
+
+const fixturesDir = path.resolve(__dirname, 'fixtures');
 
 describe('Cell parsing', () => {
     const tlb = 'bool_true$1 = Bool;';
@@ -47,5 +51,14 @@ describe('Cell parsing', () => {
         const res = parseCell(cell, defs, 'Maybe', [new (require('@ton-community/tlb-parser').NameExpr)('uint32')]);
         expect(res._id).toBe('just$1');
         expect(res.value.toString()).toBe('7');
+    });
+
+    test('parse block', () => {
+        const tlb = fs.readFileSync(path.resolve(fixturesDir, 'block.tlb'), 'utf-8');
+        const boc = fs.readFileSync(path.resolve(fixturesDir, 'block.boc'));
+        const cell = Cell.fromBoc(boc)[0];
+        const program = parseTLB(tlb);
+        const res = parseCell(cell, program, 'Block');
+        console.log(res);
     });
 });
