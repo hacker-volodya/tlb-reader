@@ -49,7 +49,7 @@ export function tryParseCell(
     program: Program,
     root: string,
     args: TypeExpr[] = [],
-): { result: any; error?: Error; errors?: any[] } {
+): { result: any; errors?: any[] } {
     const slice = cell.beginParse();
     try {
         const result = parseByType(slice, root, program, args, {});
@@ -63,7 +63,7 @@ export function tryParseCell(
             result = { _error: String(e), _remaining: slice.clone() };
         }
         const errors = gatherErrors(result);
-        return { result, error: e, errors };
+        return { result, errors };
     }
 }
 
