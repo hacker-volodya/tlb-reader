@@ -16,6 +16,7 @@ import {
     CellRefExpr,
     TypeExpr,
     CondExpr,
+    BuiltinZeroArgs,
 } from '@ton-community/tlb-parser';
 
 export { parseTLB };
@@ -248,7 +249,12 @@ function parseExpr(
         }
         if (expr instanceof BuiltinOneArgExpr) {
             if (expr.name === '##' && expr.arg instanceof NumberExpr) {
-                return slice.loadBits(expr.arg.num).toString();
+                return slice.loadUintBig(expr.arg.num);
+            }
+            if ((expr.name === '#<' || expr.name === '#<=') && expr.arg instanceof NumberExpr ) {
+                const limit = expr.arg.num;
+                const bits = Math.ceil(Math.log2(limit + (expr.name === '#<' ? 0 : 1)));
+                return slice.loadUintBig(bits);
             }
         }
         if (expr instanceof CombinatorExpr) {
@@ -277,7 +283,11 @@ function parseExpr(
             }
             return parseByType(slice, n, program, [], env);
         }
-        throw new Error('Unsupported expression');
+        if (expr instanceof BuiltinZeroArgs && expr.name == '#') {
+            // # is an alias for uint32
+            return slice.loadUint(32);
+        }
+        throw new Error(`Unsupported expression ${expr.constructor.name} (${JSON.stringify(expr, (k, v) => k == "parent" ? undefined : v)}) at ${expr.locations.line}:${expr.locations.column}`);
     } catch (e: any) {
         if (e instanceof ParseError) {
             throw e;
