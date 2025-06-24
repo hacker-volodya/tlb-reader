@@ -20,6 +20,17 @@ import {
 
 export { parseTLB };
 
+export class ParseError extends Error {
+    partial: any;
+    remaining: Slice;
+
+    constructor(message: string, partial: any, remaining: Slice) {
+        super(message);
+        this.partial = partial;
+        this.remaining = remaining.clone();
+    }
+}
+
 export function parseCell(
     cell: Cell,
     program: Program,
@@ -28,6 +39,24 @@ export function parseCell(
 ): any {
     const slice = cell.beginParse();
     return parseByType(slice, root, program, args, {});
+}
+
+export function tryParseCell(
+    cell: Cell,
+    program: Program,
+    root: string,
+    args: TypeExpr[] = [],
+): { result: any | null; remaining: Slice; error?: Error } {
+    const slice = cell.beginParse();
+    try {
+        const result = parseByType(slice, root, program, args, {});
+        return { result, remaining: slice };
+    } catch (e: any) {
+        if (e instanceof ParseError) {
+            return { result: e.partial, remaining: e.remaining, error: e };
+        }
+        return { result: null, remaining: slice, error: e };
+    }
 }
 
 function findConstructor(program: Program, name: string): Declaration | undefined {
@@ -49,16 +78,30 @@ function parseByType(
     if (byResult.length > 0) {
         for (const d of byResult) {
             if (matchTag(slice, d.constructorDef.tag)) {
-                return parseDecl(slice, d, program, args, env, true);
+                try {
+                    return parseDecl(slice, d, program, args, env, true);
+                } catch (e: any) {
+                    if (e instanceof ParseError) {
+                        throw e;
+                    }
+                    throw new ParseError(String(e), {}, slice.clone());
+                }
             }
         }
-        throw new Error('No matching constructor for ' + name);
+        throw new ParseError('No matching constructor for ' + name, {}, slice.clone());
     }
     const cons = findConstructor(program, name);
     if (cons) {
-        return parseDecl(slice, cons, program, args, env, false);
+        try {
+            return parseDecl(slice, cons, program, args, env, false);
+        } catch (e: any) {
+            if (e instanceof ParseError) {
+                throw e;
+            }
+            throw new ParseError(String(e), {}, slice.clone());
+        }
     }
-    throw new Error('Type ' + name + ' not found');
+    throw new ParseError('Type ' + name + ' not found', {}, slice.clone());
 }
 
 function parseDecl(
@@ -81,10 +124,21 @@ function parseDecl(
             }
         }
     }
-    const result = parseFields(slice, decl.fields, program, localEnv);
-    const tag = decl.constructorDef.tag || '';
-    result['_id'] = decl.constructorDef.name + tag;
-    return result;
+    try {
+        const result = parseFields(slice, decl.fields, program, localEnv);
+        const tag = decl.constructorDef.tag || '';
+        result['_id'] = decl.constructorDef.name + tag;
+        return result;
+    } catch (e: any) {
+        if (e instanceof ParseError) {
+            const tag = decl.constructorDef.tag || '';
+            if (typeof e.partial === 'object' && e.partial !== null) {
+                e.partial['_id'] = decl.constructorDef.name + tag;
+            }
+            throw e;
+        }
+        throw new ParseError(String(e), { _id: decl.constructorDef.name + (decl.constructorDef.tag || '') }, slice.clone());
+    }
 }
 
 function matchTag(slice: Slice, tag: string | null): boolean {
@@ -126,12 +180,36 @@ function parseFields(
         if (f instanceof FieldBuiltinDef || f instanceof FieldCurlyExprDef) {
             continue;
         } else if (f instanceof FieldNamedDef) {
-            res[f.name] = parseExpr(slice, f.expr, program, env);
+            try {
+                res[f.name] = parseExpr(slice, f.expr, program, env);
+            } catch (e: any) {
+                if (e instanceof ParseError) {
+                    res[f.name] = e.partial;
+                    throw new ParseError(e.message, res, e.remaining);
+                }
+                throw new ParseError(String(e), res, slice.clone());
+            }
         } else if (f instanceof FieldExprDef) {
-            res['_'] = parseExpr(slice, f.expr, program, env);
+            try {
+                res['_'] = parseExpr(slice, f.expr, program, env);
+            } catch (e: any) {
+                if (e instanceof ParseError) {
+                    res['_'] = e.partial;
+                    throw new ParseError(e.message, res, e.remaining);
+                }
+                throw new ParseError(String(e), res, slice.clone());
+            }
         } else if (f instanceof FieldAnonymousDef) {
             const subSlice = f.isRef ? slice.loadRef().beginParse() : slice;
-            res[f.name || '_'] = parseFields(subSlice, f.fields, program, env);
+            try {
+                res[f.name || '_'] = parseFields(subSlice, f.fields, program, env);
+            } catch (e: any) {
+                if (e instanceof ParseError) {
+                    res[f.name || '_'] = e.partial;
+                    throw new ParseError(e.message, res, e.remaining);
+                }
+                throw new ParseError(String(e), res, subSlice.clone());
+            }
         }
     }
     return res;
@@ -163,40 +241,47 @@ function parseExpr(
     program: Program,
     env: Record<string, TypeExpr>,
 ): any {
-    if (expr instanceof CellRefExpr) {
-        const ref = slice.loadRef();
-        return parseExpr(ref.beginParse(), expr.expr, program, env);
+    try {
+        if (expr instanceof CellRefExpr) {
+            const ref = slice.loadRef();
+            return parseExpr(ref.beginParse(), expr.expr, program, env);
+        }
+        if (expr instanceof BuiltinOneArgExpr) {
+            if (expr.name === '##' && expr.arg instanceof NumberExpr) {
+                return slice.loadBits(expr.arg.num).toString();
+            }
+        }
+        if (expr instanceof CombinatorExpr) {
+            const args = expr.args.map(a => resolveTypeExpr(a, env));
+            return parseByType(slice, expr.name, program, args, env);
+        }
+        if (expr instanceof NameExpr) {
+            const n = expr.name;
+            if (env[n]) {
+                return parseExpr(slice, env[n], program, env);
+            }
+            if (n.startsWith('int')) {
+                const b = parseInt(n.slice(3), 10);
+                if (!isNaN(b)) return slice.loadIntBig(b);
+            }
+            if (n.startsWith('uint')) {
+                const b = parseInt(n.slice(4), 10);
+                if (!isNaN(b)) return slice.loadUintBig(b);
+            }
+            if (n.startsWith('bits')) {
+                const b = parseInt(n.slice(4), 10);
+                if (!isNaN(b)) return slice.loadBits(b).toString();
+            }
+            if (n === 'Bool') {
+                return slice.loadBit();
+            }
+            return parseByType(slice, n, program, [], env);
+        }
+        throw new Error('Unsupported expression');
+    } catch (e: any) {
+        if (e instanceof ParseError) {
+            throw e;
+        }
+        throw new ParseError(String(e), undefined, slice.clone());
     }
-    if (expr instanceof BuiltinOneArgExpr) {
-        if (expr.name === '##' && expr.arg instanceof NumberExpr) {
-            return slice.loadBits(expr.arg.num).toString();
-        }
-    }
-    if (expr instanceof CombinatorExpr) {
-        const args = expr.args.map(a => resolveTypeExpr(a, env));
-        return parseByType(slice, expr.name, program, args, env);
-    }
-    if (expr instanceof NameExpr) {
-        const n = expr.name;
-        if (env[n]) {
-            return parseExpr(slice, env[n], program, env);
-        }
-        if (n.startsWith('int')) {
-            const b = parseInt(n.slice(3), 10);
-            if (!isNaN(b)) return slice.loadIntBig(b);
-        }
-        if (n.startsWith('uint')) {
-            const b = parseInt(n.slice(4), 10);
-            if (!isNaN(b)) return slice.loadUintBig(b);
-        }
-        if (n.startsWith('bits')) {
-            const b = parseInt(n.slice(4), 10);
-            if (!isNaN(b)) return slice.loadBits(b).toString();
-        }
-        if (n === 'Bool') {
-            return slice.loadBit();
-        }
-        return parseByType(slice, n, program, [], env);
-    }
-    throw new Error('Unsupported expression');
 }
