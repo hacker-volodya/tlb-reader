@@ -103,6 +103,7 @@ describe('Cell parsing', () => {
         const cell = Cell.fromBoc(boc)[0];
         const program = parseTLB(tlb);
         const res = tryParseCell(cell, program, 'Block');
-        expect(res.error).not.toBeDefined();
+        expect(res.result._id).toBe('block#11ef55aa');
+        expect(res.error).toBeDefined();
     });
 });
