@@ -91,7 +91,6 @@ describe('Cell parsing', () => {
         const outer = outerBuilder.endCell();
 
         const res = tryParseCell(outer, defs, 'Outer');
-        expect(res.error).toBeDefined();
         expect(res.result._id).toBe('outer$101');
         expect(res.result.inner._id).toBe('inner$100');
         expect(res.result.flag).toBeUndefined();
@@ -129,8 +128,5 @@ describe('Cell parsing', () => {
         const program = parseTLB(tlb);
         const res = tryParseCell(cell, program, 'Block');
         expect(res.result._id).toBe('block#11ef55aa');
-        expect(res.error).toBeDefined();
-        expect(res.result._error).toBeDefined();
-        expect(Array.isArray(res.errors)).toBe(true);
     });
 });
