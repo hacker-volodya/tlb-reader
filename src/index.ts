@@ -49,16 +49,21 @@ export function tryParseCell(
     program: Program,
     root: string,
     args: TypeExpr[] = [],
-): { result: any | null; remaining: Slice; error?: Error } {
+): { result: any; error?: Error; errors?: any[] } {
     const slice = cell.beginParse();
     try {
         const result = parseByType(slice, root, program, args, {});
-        return { result, remaining: slice };
+        const errors = gatherErrors(result);
+        return errors.length > 0 ? { result, errors } : { result };
     } catch (e: any) {
+        let result: any;
         if (e instanceof ParseError) {
-            return { result: e.partial, remaining: e.remaining, error: e };
+            result = { ...e.partial, _error: e.message, _remaining: e.remaining.clone() };
+        } else {
+            result = { _error: String(e), _remaining: slice.clone() };
         }
-        return { result: null, remaining: slice, error: e };
+        const errors = gatherErrors(result);
+        return { result, error: e, errors };
     }
 }
 
@@ -205,14 +210,26 @@ function parseFields(
             }
         } else if (f instanceof FieldAnonymousDef) {
             const subSlice = f.isRef ? slice.loadRef().beginParse() : slice;
-            try {
-                res[f.name || '_'] = parseFields(subSlice, f.fields, program, env, { ...parentValues, ...res });
-            } catch (e: any) {
-                if (e instanceof ParseError) {
-                    res[f.name || '_'] = e.partial;
-                    throw new ParseError(e.message, res, e.remaining);
+            if (f.isRef) {
+                try {
+                    res[f.name || '_'] = parseFields(subSlice, f.fields, program, env, { ...parentValues, ...res });
+                } catch (e: any) {
+                    if (e instanceof ParseError) {
+                        res[f.name || '_'] = { ...e.partial, _error: e.message, _remaining: e.remaining.clone() };
+                    } else {
+                        res[f.name || '_'] = { _error: String(e), _remaining: subSlice.clone() };
+                    }
                 }
-                throw new ParseError(String(e), res, subSlice.clone());
+            } else {
+                try {
+                    res[f.name || '_'] = parseFields(subSlice, f.fields, program, env, { ...parentValues, ...res });
+                } catch (e: any) {
+                    if (e instanceof ParseError) {
+                        res[f.name || '_'] = e.partial;
+                        throw new ParseError(e.message, res, e.remaining);
+                    }
+                    throw new ParseError(String(e), res, subSlice.clone());
+                }
             }
         }
     }
@@ -316,8 +333,15 @@ function parseExpr(
             return parseExpr(slice, expr.condExpr, program, env, values);
         }
         if (expr instanceof CellRefExpr) {
-            const ref = slice.loadRef();
-            return parseExpr(ref.beginParse(), expr.expr, program, env, values);
+            const refSlice = slice.loadRef().beginParse();
+            try {
+                return parseExpr(refSlice, expr.expr, program, env, values);
+            } catch (e: any) {
+                if (e instanceof ParseError) {
+                    return { ...e.partial, _error: e.message, _remaining: e.remaining.clone() };
+                }
+                return { _error: String(e), _remaining: refSlice.clone() };
+            }
         }
         if (expr instanceof BuiltinOneArgExpr) {
             if (expr.name === '##' && expr.arg instanceof NumberExpr) {
@@ -392,4 +416,18 @@ function parseExpr(
         }
         throw new ParseError(String(e), undefined, slice.clone());
     }
+}
+
+function gatherErrors(obj: any, path: (string | number)[] = []): any[] {
+    if (obj === null || typeof obj !== 'object') return [];
+    let res: any[] = [];
+    if (Object.prototype.hasOwnProperty.call(obj, '_error')) {
+        res.push({ path, message: obj._error, remaining: obj._remaining });
+    }
+    for (const [k, v] of Object.entries(obj)) {
+        if (v && typeof v === 'object') {
+            res = res.concat(gatherErrors(v, path.concat(k)));
+        }
+    }
+    return res;
 }
