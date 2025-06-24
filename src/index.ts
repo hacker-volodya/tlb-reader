@@ -17,6 +17,8 @@ import {
     TypeExpr,
     CondExpr,
     BuiltinZeroArgs,
+    MathExpr,
+    NegateExpr,
 } from '@ton-community/tlb-parser';
 
 export { parseTLB };
@@ -119,7 +121,7 @@ function parseDecl(
     const localEnv: Record<string, TypeExpr> = { ...env };
     let idx = 0;
     for (const f of decl.fields) {
-        if (f instanceof FieldBuiltinDef && f.type === 'Type') {
+        if (f instanceof FieldBuiltinDef && (f.type === 'Type' || f.type === '#')) {
             if (idx < args.length) {
                 localEnv[f.name] = args[idx++];
             }
@@ -238,6 +240,50 @@ function resolveTypeExpr(expr: TypeExpr, env: Record<string, TypeExpr>): TypeExp
     return expr;
 }
 
+function evalNumericExpr(expr: CondExpr | TypeExpr, env: Record<string, TypeExpr>, values: Record<string, any> = {}): bigint {
+    if (expr instanceof NumberExpr) {
+        return BigInt(expr.num);
+    }
+    if (expr instanceof NameExpr) {
+        if (env[expr.name]) {
+            return evalNumericExpr(env[expr.name], env, values);
+        }
+        if (Object.prototype.hasOwnProperty.call(values, expr.name)) {
+            const v = values[expr.name];
+            return typeof v === 'bigint' ? v : BigInt(v);
+        }
+        throw new Error('Unknown identifier ' + expr.name);
+    }
+    if (expr instanceof MathExpr) {
+        const left = evalNumericExpr(expr.left, env, values);
+        const right = evalNumericExpr(expr.right, env, values);
+        if (expr.op === '*') {
+            return left * right;
+        } else if (expr.op === '+') {
+            return left + right;
+        }
+        throw new Error('Unsupported operator ' + expr.op);
+    }
+    if (expr instanceof NegateExpr) {
+        const v = evalNumericExpr(expr.expr, env, values);
+        return -v;
+    }
+    if (expr instanceof CondExpr) {
+        const cond = evalNumericExpr(expr.left, env, values);
+        let flag: boolean;
+        if (expr.dotExpr !== null && expr.dotExpr !== undefined) {
+            flag = ((cond >> BigInt(expr.dotExpr)) & 1n) === 1n;
+        } else {
+            flag = cond !== 0n;
+        }
+        if (!flag) {
+            return 0n;
+        }
+        return evalNumericExpr(expr.condExpr, env, values);
+    }
+    throw new Error('Unsupported numeric expression');
+}
+
 function parseExpr(
     slice: Slice,
     expr: CondExpr | TypeExpr,
@@ -277,15 +323,35 @@ function parseExpr(
             if (expr.name === '##' && expr.arg instanceof NumberExpr) {
                 return slice.loadUintBig(expr.arg.num);
             }
-            if ((expr.name === '#<' || expr.name === '#<=') && expr.arg instanceof NumberExpr ) {
-                const limit = expr.arg.num;
+            if (expr.name === '#<' || expr.name === '#<=') {
+                let limit: number;
+                if (expr.arg instanceof NumberExpr) {
+                    limit = expr.arg.num;
+                } else {
+                    const v = parseExpr(slice.clone(), expr.arg, program, env, values);
+                    limit = typeof v === 'bigint' ? Number(v) : Number(v);
+                }
                 const bits = Math.ceil(Math.log2(limit + (expr.name === '#<' ? 0 : 1)));
                 return slice.loadUintBig(bits);
             }
         }
         if (expr instanceof CombinatorExpr) {
+            if ((expr.name === 'uint' || expr.name === 'int' || expr.name === 'bits') && expr.args.length === 1) {
+                const bits = Number(evalNumericExpr(expr.args[0], env, values));
+                if (expr.name === 'uint') {
+                    return slice.loadUintBig(bits);
+                } else if (expr.name === 'int') {
+                    return slice.loadIntBig(bits);
+                } else {
+                    return slice.loadBits(bits).toString();
+                }
+            }
             const args = expr.args.map(a => resolveTypeExpr(a, env));
             return parseByType(slice, expr.name, program, args, env);
+        }
+        if (expr instanceof MathExpr && expr.op === '*' && expr.right instanceof NameExpr && expr.right.name === 'Bit') {
+            const len = Number(evalNumericExpr(expr.left, env, values));
+            return slice.loadBits(len).toString();
         }
         if (expr instanceof NameExpr) {
             const n = expr.name;
@@ -311,6 +377,9 @@ function parseExpr(
                 return slice.loadBit();
             }
             return parseByType(slice, n, program, [], env);
+        }
+        if (expr instanceof NumberExpr) {
+            return expr.num;
         }
         if (expr instanceof BuiltinZeroArgs && expr.name == '#') {
             // # is an alias for uint32
