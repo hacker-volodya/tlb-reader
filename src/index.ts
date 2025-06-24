@@ -40,7 +40,7 @@ export function parseCell(
     root: string,
     args: TypeExpr[] = [],
 ): any {
-    const slice = cell.beginParse();
+    const slice = cell.beginParse(true);
     return parseByType(slice, root, program, args, {});
 }
 
@@ -50,7 +50,7 @@ export function tryParseCell(
     root: string,
     args: TypeExpr[] = [],
 ): { result: any; errors?: any[] } {
-    const slice = cell.beginParse();
+    const slice = cell.beginParse(true);
     try {
         const result = parseByType(slice, root, program, args, {});
         const errors = gatherErrors(result);
@@ -209,7 +209,7 @@ function parseFields(
                 throw new ParseError(String(e), res, slice.clone());
             }
         } else if (f instanceof FieldAnonymousDef) {
-            const subSlice = f.isRef ? slice.loadRef().beginParse() : slice;
+            const subSlice = f.isRef ? slice.loadRef().beginParse(true) : slice;
             if (f.isRef) {
                 try {
                     res[f.name || '_'] = parseFields(subSlice, f.fields, program, env, { ...parentValues, ...res });
@@ -333,7 +333,7 @@ function parseExpr(
             return parseExpr(slice, expr.condExpr, program, env, values);
         }
         if (expr instanceof CellRefExpr) {
-            const refSlice = slice.loadRef().beginParse();
+            const refSlice = slice.loadRef().beginParse(true);
             try {
                 return parseExpr(refSlice, expr.expr, program, env, values);
             } catch (e: any) {

@@ -1,4 +1,4 @@
-import { Builder, Cell } from '@ton/core';
+import { Builder, Cell, Slice } from '@ton/core';
 import { parseCell, parseTLB, tryParseCell } from '../src';
 import fs from 'fs';
 import path from 'path';
@@ -149,6 +149,12 @@ describe('Cell parsing', () => {
         const cell = Cell.fromBoc(boc)[0];
         const program = parseTLB(tlb);
         const res = tryParseCell(cell, program, 'Block');
+        console.log(JSON.stringify(res, (k, v) => {
+            if (typeof v == 'bigint') return v.toString();
+            if (v instanceof Slice) return v.asCell().toBoc().toString('base64');
+            if (v instanceof Cell) return v.toBoc().toString('base64');
+            return v;
+        }, 4));
         expect(res.result._id).toBe('block#11ef55aa');
     });
 });
