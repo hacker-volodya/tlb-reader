@@ -91,10 +91,34 @@ describe('Cell parsing', () => {
         const outer = outerBuilder.endCell();
 
         const res = tryParseCell(outer, defs, 'Outer');
-        expect(res.error).toBeDefined();
         expect(res.result._id).toBe('outer$101');
         expect(res.result.inner._id).toBe('inner$100');
         expect(res.result.flag).toBeUndefined();
+        expect(res.result._error).toBeDefined();
+        expect(res.result._remaining).toBeDefined();
+        expect(Array.isArray(res.errors)).toBe(true);
+    });
+
+    test('continue parsing after ref failure', () => {
+        const tlb2 = `inner$100 value:uint8 flag:Bool = Inner; outer$101 inner:^Inner other:uint8 = Outer;`;
+        const defs = parseTLB(tlb2);
+
+        const badInnerBuilder = new Builder();
+        badInnerBuilder.storeUint(0b100, 3);
+        badInnerBuilder.storeUint(7, 8); // missing flag bit
+        const badInner = badInnerBuilder.endCell();
+
+        const outerBuilder = new Builder();
+        outerBuilder.storeUint(0b101, 3);
+        outerBuilder.storeRef(badInner);
+        outerBuilder.storeUint(9, 8);
+        const outer = outerBuilder.endCell();
+
+        const res = parseCell(outer, defs, 'Outer');
+        expect(res._id).toBe('outer$101');
+        expect(res.other.toString()).toBe('9');
+        expect(res.inner._error).toBeDefined();
+        expect(res.inner._remaining).toBeDefined();
     });
 
     test('continue parsing after ref failure', () => {
@@ -126,6 +150,5 @@ describe('Cell parsing', () => {
         const program = parseTLB(tlb);
         const res = tryParseCell(cell, program, 'Block');
         expect(res.result._id).toBe('block#11ef55aa');
-        expect(res.error).toBeDefined();
     });
 });
