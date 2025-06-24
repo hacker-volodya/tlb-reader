@@ -10,7 +10,7 @@ describe('Cell parsing', () => {
         builder.storeBit(1);
         const cell = builder.endCell();
         const res = parseCell(cell, program, 'Bool');
-        expect(res).toEqual({});
+        expect(res._id).toBe('bool_true$1');
     });
 
     test('parse nested structure', () => {
@@ -29,6 +29,8 @@ describe('Cell parsing', () => {
         const outer = outerBuilder.endCell();
 
         const res = parseCell(outer, defs, 'outer');
+        expect(res._id).toBe('outer$101');
+        expect(res.inner._id).toBe('inner$100');
         expect(res.inner.value.toString()).toBe('7');
         expect(res.flag).toBe(true);
     });
@@ -43,6 +45,7 @@ describe('Cell parsing', () => {
         const cell = builder.endCell();
 
         const res = parseCell(cell, defs, 'Maybe', [new (require('@ton-community/tlb-parser').NameExpr)('uint32')]);
+        expect(res._id).toBe('just$1');
         expect(res.value.toString()).toBe('7');
     });
 });
