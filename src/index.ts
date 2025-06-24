@@ -400,6 +400,9 @@ function parseExpr(
             if (n === 'Bool') {
                 return slice.loadBit();
             }
+            if (n === 'Cell' || n === 'Any') {
+                return slice;
+            }
             return parseByType(slice, n, program, [], env);
         }
         if (expr instanceof NumberExpr) {
