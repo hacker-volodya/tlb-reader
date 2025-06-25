@@ -1,6 +1,6 @@
 import { beginCell, Builder, Cell, Slice } from '@ton/core';
 import { serializeDict } from '@ton/core/dist/dict/serializeDict';
-import { parseCell, parseTLB, tryParseCell } from '../src';
+import { parseTLB, tryParseCell } from '../src';
 import fs from 'fs';
 import path from 'path';
 
@@ -13,8 +13,8 @@ describe('Cell parsing', () => {
         const builder = new Builder();
         builder.storeBit(1);
         const cell = builder.endCell();
-        const res = parseCell(cell, program, 'Bool');
-        expect(res._id).toBe('bool_true$1');
+        const res = tryParseCell(cell, program, 'Bool');
+        expect(res.result._id).toBe('bool_true$1');
     });
 
     test('parse nested structure', () => {
@@ -32,11 +32,11 @@ describe('Cell parsing', () => {
         outerBuilder.storeBit(1);
         const outer = outerBuilder.endCell();
 
-        const res = parseCell(outer, defs, 'outer');
-        expect(res._id).toBe('outer$101');
-        expect(res.inner._id).toBe('inner$100');
-        expect(res.inner.value.toString()).toBe('7');
-        expect(res.flag).toBe(true);
+        const res = tryParseCell(outer, defs, 'outer');
+        expect(res.result._id).toBe('outer$101');
+        expect(res.result.inner._id).toBe('inner$100');
+        expect(res.result.inner.value.toString()).toBe('7');
+        expect(res.result.flag).toBe(true);
     });
 
     test('parse generic maybe cell', () => {
@@ -48,9 +48,9 @@ describe('Cell parsing', () => {
         builder.storeUint(7, 32);
         const cell = builder.endCell();
 
-        const res = parseCell(cell, defs, 'Maybe', [new (require('@ton-community/tlb-parser').NameExpr)('uint32')]);
-        expect(res._id).toBe('just$1');
-        expect(res.value.toString()).toBe('7');
+        const res = tryParseCell(cell, defs, 'Maybe', [new (require('@ton-community/tlb-parser').NameExpr)('uint32')]);
+        expect(res.result._id).toBe('just$1');
+        expect(res.result.value.toString()).toBe('7');
     });
 
     test('conditional field parsing', () => {
@@ -62,17 +62,17 @@ describe('Cell parsing', () => {
         b1.storeUint(17, 8);
         const c1 = b1.endCell();
 
-        const r1 = parseCell(c1, defs, 'foo');
-        expect(r1.flag).toBe(true);
-        expect(r1.value.toString()).toBe('17');
+        const r1 = tryParseCell(c1, defs, 'foo');
+        expect(r1.result.flag).toBe(true);
+        expect(r1.result.value.toString()).toBe('17');
 
         const b2 = new Builder();
         b2.storeBit(0); // flag
         const c2 = b2.endCell();
 
-        const r2 = parseCell(c2, defs, 'foo');
-        expect(r2.flag).toBe(false);
-        expect(r2.value).toBeUndefined();
+        const r2 = tryParseCell(c2, defs, 'foo');
+        expect(r2.result.flag).toBe(false);
+        expect(r2.result.value).toBeUndefined();
     });
 
     test('partial result on failure', () => {
@@ -114,11 +114,11 @@ describe('Cell parsing', () => {
         outerBuilder.storeUint(9, 8);
         const outer = outerBuilder.endCell();
 
-        const res = parseCell(outer, defs, 'Outer');
-        expect(res._id).toBe('outer$101');
-        expect(res.other.toString()).toBe('9');
-        expect(res.inner._error).toBeDefined();
-        expect(res.inner._remaining).toBeDefined();
+        const res = tryParseCell(outer, defs, 'Outer');
+        expect(res.result._id).toBe('outer$101');
+        expect(res.result.other.toString()).toBe('9');
+        expect(res.result.inner._error).toBeDefined();
+        expect(res.result.inner._remaining).toBeDefined();
     });
 
     test('continue parsing after ref failure', () => {
@@ -136,11 +136,11 @@ describe('Cell parsing', () => {
         outerBuilder.storeUint(9, 8);
         const outer = outerBuilder.endCell();
 
-        const res = parseCell(outer, defs, 'Outer');
-        expect(res._id).toBe('outer$101');
-        expect(res.other.toString()).toBe('9');
-        expect(res.inner._error).toBeDefined();
-        expect(res.inner._remaining).toBeDefined();
+        const res = tryParseCell(outer, defs, 'Outer');
+        expect(res.result._id).toBe('outer$101');
+        expect(res.result.other.toString()).toBe('9');
+        expect(res.result.inner._error).toBeDefined();
+        expect(res.result.inner._remaining).toBeDefined();
     });
 
     test('parse block', () => {
@@ -177,7 +177,7 @@ describe('Dictionary parsing', () => {
         builder.storeRef(root);
         const cell = builder.endCell();
 
-        const res = parseCell(cell, program, 'dict_test');
+        const res = tryParseCell(cell, program, 'dict_test');
         console.log(res);
     });
 
@@ -186,7 +186,7 @@ describe('Dictionary parsing', () => {
         builder.storeBit(0);
         const cell = builder.endCell();
 
-        const res = parseCell(cell, program, 'dict_test');
-        expect(res.dict.size).toBe(0);
+        const res = tryParseCell(cell, program, 'dict_test');
+        expect(res.result.dict._id).toBe('hme_empty$0');
     });
 });

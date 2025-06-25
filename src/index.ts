@@ -34,16 +34,6 @@ export class ParseError extends Error {
     }
 }
 
-export function parseCell(
-    cell: Cell,
-    program: Program,
-    root: string,
-    args: TypeExpr[] = [],
-): any {
-    const slice = cell.beginParse(true);
-    return parseByType(slice, root, program, args, {});
-}
-
 export function tryParseCell(
     cell: Cell,
     program: Program,
