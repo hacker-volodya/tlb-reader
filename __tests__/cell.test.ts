@@ -190,3 +190,17 @@ describe('Dictionary parsing', () => {
         expect(res.result.dict._id).toBe('hme_empty$0');
     });
 });
+
+describe('NegateExpr', () => {
+    test('parse unary number', () => {
+        const tlb = `unary_zero$0 = Unary ~0; unary_succ$1 {n:#} x:(Unary ~n) = Unary ~(n + 1); bitstring$_ len:(Unary ~n) s:(n * Bit) = BitString;`;
+        const program = parseTLB(tlb);
+        const cell = beginCell().storeUint(0b110, 3).storeUint(0b10, 2).endCell();
+        const res = tryParseCell(cell, program, 'BitString');
+        expect(res.result._id).toBe('bitstring$_');
+        expect(res.result.len._id).toBe('unary_succ$1');
+        expect(res.result.len.x._id).toBe('unary_succ$1');
+        expect(res.result.len.x.x._id).toBe('unary_zero$0');
+        expect(res.result.s).toBeDefined();
+    });
+});
