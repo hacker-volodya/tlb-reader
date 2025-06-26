@@ -3,6 +3,7 @@ import { serializeDict } from '@ton/core/dist/dict/serializeDict';
 import { parseTLB, tryParseCell } from '../src';
 import fs from 'fs';
 import path from 'path';
+import { NameExpr } from '@ton-community/tlb-parser';
 
 const fixturesDir = path.resolve(__dirname, 'fixtures');
 
@@ -48,7 +49,7 @@ describe('Cell parsing', () => {
         builder.storeUint(7, 32);
         const cell = builder.endCell();
 
-        const res = tryParseCell(cell, defs, 'Maybe', [new (require('@ton-community/tlb-parser').NameExpr)('uint32')]);
+        const res = tryParseCell(cell, defs, 'Maybe', [new NameExpr('uint32')]);
         expect(res.result._id).toBe('just$1');
         expect(res.result.value.toString()).toBe('7');
     });

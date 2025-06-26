@@ -18,7 +18,6 @@ import {
     CondExpr,
     BuiltinZeroArgs,
     MathExpr,
-    NegateExpr,
 } from '@ton-community/tlb-parser';
 
 export { parseTLB };
@@ -226,16 +225,6 @@ function parseFields(
     return res;
 }
 
-function parseAnon(
-    slice: Slice,
-    fields: FieldDefinition[],
-    program: Program,
-    env: Record<string, TypeExpr>,
-    parentValues: Record<string, any> = {},
-): any {
-    return parseFields(slice, fields, program, env, parentValues);
-}
-
 function resolveTypeExpr(expr: TypeExpr, env: Record<string, TypeExpr>): TypeExpr {
     if (expr instanceof NameExpr && env[expr.name]) {
         return resolveTypeExpr(env[expr.name], env);
@@ -270,10 +259,6 @@ function evalNumericExpr(expr: CondExpr | TypeExpr, env: Record<string, TypeExpr
             return left + right;
         }
         throw new Error('Unsupported operator ' + expr.op);
-    }
-    if (expr instanceof NegateExpr) {
-        const v = evalNumericExpr(expr.expr, env, values);
-        return -v;
     }
     if (expr instanceof CondExpr) {
         const cond = evalNumericExpr(expr.left, env, values);
