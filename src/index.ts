@@ -73,17 +73,23 @@ function parseByType(
 ): any {
     const byResult = findCombinators(program, name);
     if (byResult.length > 0) {
+        let lastError: any = null;
         for (const d of byResult) {
             if (matchTag(slice, d.constructorDef.tag)) {
+                const readerState = (slice as any)._reader.clone();
+                const refsState = (slice as any)._refsOffset;
                 try {
-                    return parseDecl(slice, d, program, args, env, true);
+                    const result = parseDecl(slice, d, program, args, env, true);
+                    return result;
                 } catch (e: any) {
-                    if (e instanceof ParseError) {
-                        throw e;
-                    }
-                    throw new ParseError(String(e), {}, slice.clone());
+                    (slice as any)._reader = readerState;
+                    (slice as any)._refsOffset = refsState;
+                    lastError = e;
                 }
             }
+        }
+        if (lastError) {
+            throw lastError;
         }
         throw new ParseError('No matching constructor for ' + name, {}, slice.clone());
     }

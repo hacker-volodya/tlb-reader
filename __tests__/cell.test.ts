@@ -122,6 +122,22 @@ describe('Cell parsing', () => {
         expect(res.result.inner._remaining).toBeDefined();
     });
 
+    test('parse MsgAddress union', () => {
+        const tlb = fs.readFileSync(path.resolve(fixturesDir, 'block.tlb'), 'utf-8');
+        const program = parseTLB(tlb);
+
+        const b = new Builder();
+        b.storeUint(0b10, 2); // addr_std tag
+        b.storeBit(0); // nothing in Maybe Anycast
+        b.storeInt(0, 8); // workchain_id
+        b.storeUint(0, 256); // address
+        const cell = b.endCell();
+
+        const res = tryParseCell(cell, program, 'MsgAddress');
+        expect(res.result._id).toBe('_');
+        expect(res.result._._id).toBe('addr_std$10');
+    });
+
     test('continue parsing after ref failure', () => {
         const tlb2 = `inner$100 value:uint8 flag:Bool = Inner; outer$101 inner:^Inner other:uint8 = Outer;`;
         const defs = parseTLB(tlb2);
