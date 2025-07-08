@@ -129,18 +129,15 @@ function parseDecl(
     }
     try {
         const result = parseFields(slice, decl.fields, program, localEnv, {});
-        const tag = decl.constructorDef.tag || '';
-        result['_id'] = decl.constructorDef.name + tag;
-        return result;
+        return { ...result, _id: decl.constructorDef.name, _tag: (decl.constructorDef.tag || ''), _type: decl.combinator.name };
     } catch (e: any) {
         if (e instanceof ParseError) {
-            const tag = decl.constructorDef.tag || '';
             if (typeof e.partial === 'object' && e.partial !== null) {
-                e.partial['_id'] = decl.constructorDef.name + tag;
+                e.partial = { ...e.partial, _id: decl.constructorDef.name, _tag: (decl.constructorDef.tag || ''), _type: decl.combinator.name };
             }
             throw e;
         }
-        throw new ParseError(String(e), { _id: decl.constructorDef.name + (decl.constructorDef.tag || '') }, slice.clone());
+        throw new ParseError(String(e), { _id: decl.constructorDef.name, _tag: (decl.constructorDef.tag || ''), _type: decl.combinator.name }, slice.clone());
     }
 }
 
