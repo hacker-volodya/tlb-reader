@@ -15,7 +15,8 @@ describe('Cell parsing', () => {
         builder.storeBit(1);
         const cell = builder.endCell();
         const res = tryParseCell(cell, program, 'Bool');
-        expect(res.result._id).toBe('bool_true$1');
+        expect(res.result._id).toBe('bool_true');
+        expect(res.result._tag).toBe('$1');
     });
 
     test('parse nested structure', () => {
@@ -34,8 +35,10 @@ describe('Cell parsing', () => {
         const outer = outerBuilder.endCell();
 
         const res = tryParseCell(outer, defs, 'outer');
-        expect(res.result._id).toBe('outer$101');
-        expect(res.result.inner._id).toBe('inner$100');
+        expect(res.result._id).toBe('outer');
+        expect(res.result._tag).toBe('$101');
+        expect(res.result.inner._id).toBe('inner');
+        expect(res.result.inner._tag).toBe('$100');
         expect(res.result.inner.value.toString()).toBe('7');
         expect(res.result.flag).toBe(true);
     });
@@ -50,7 +53,8 @@ describe('Cell parsing', () => {
         const cell = builder.endCell();
 
         const res = tryParseCell(cell, defs, 'Maybe', [new NameExpr('uint32')]);
-        expect(res.result._id).toBe('just$1');
+        expect(res.result._id).toBe('just');
+        expect(res.result._tag).toBe('$1');
         expect(res.result.value.toString()).toBe('7');
     });
 
@@ -92,8 +96,10 @@ describe('Cell parsing', () => {
         const outer = outerBuilder.endCell();
 
         const res = tryParseCell(outer, defs, 'Outer');
-        expect(res.result._id).toBe('outer$101');
-        expect(res.result.inner._id).toBe('inner$100');
+        expect(res.result._id).toBe('outer');
+        expect(res.result._tag).toBe('$101');
+        expect(res.result.inner._id).toBe('inner');
+        expect(res.result.inner._tag).toBe('$100');
         expect(res.result.flag).toBeUndefined();
         expect(res.result._error).toBeDefined();
         expect(res.result._remaining).toBeDefined();
@@ -113,7 +119,8 @@ describe('Cell parsing', () => {
 
         const res = tryParseCell(cell, program, 'MsgAddress');
         expect(res.result._id).toBe('_');
-        expect(res.result._._id).toBe('addr_std$10');
+        expect(res.result._._id).toBe('addr_std');
+        expect(res.result._._tag).toBe('$10');
     });
 
     test('parse block', () => {
@@ -128,7 +135,8 @@ describe('Cell parsing', () => {
         //     if (v instanceof Cell) return v.toBoc().toString('base64');
         //     return v;
         // }, 4));
-        expect(res.result._id).toBe('block#11ef55aa');
+        expect(res.result._id).toBe('block');
+        expect(res.result._tag).toBe('#11ef55aa');
     });
 });
 
@@ -160,7 +168,8 @@ describe('Dictionary parsing', () => {
         const cell = builder.endCell();
 
         const res = tryParseCell(cell, program, 'dict_test');
-        expect(res.result.dict._id).toBe('hme_empty$0');
+        expect(res.result.dict._id).toBe('hme_empty');
+        expect(res.result.dict._tag).toBe('$0');
     });
 });
 
