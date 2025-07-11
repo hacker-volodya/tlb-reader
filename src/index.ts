@@ -279,6 +279,158 @@ function evalNumericExpr(expr: CondExpr | TypeExpr, env: Record<string, TypeExpr
     throw new Error('Unsupported numeric expression');
 }
 
+// Individual expression handlers
+function handleCondExpr(
+    slice: Slice,
+    expr: CondExpr,
+    program: Program,
+    env: Record<string, TypeExpr>,
+    values: Record<string, any>,
+): any {
+    let condValue: any;
+    if (expr.left instanceof NameExpr && Object.prototype.hasOwnProperty.call(values, expr.left.name)) {
+        condValue = values[expr.left.name];
+    } else {
+        condValue = parseExpr(slice, expr.left, program, env, values);
+    }
+    let flag: boolean;
+    if (expr.dotExpr !== null && expr.dotExpr !== undefined) {
+        try {
+            const num = BigInt(condValue);
+            flag = ((num >> BigInt(expr.dotExpr)) & 1n) === 1n;
+        } catch {
+            flag = false;
+        }
+    } else {
+        flag = Boolean(condValue);
+    }
+    if (!flag) {
+        return undefined;
+    }
+    return parseExpr(slice, expr.condExpr, program, env, values);
+}
+
+function handleCellRefExpr(
+    slice: Slice,
+    expr: CellRefExpr,
+    program: Program,
+    env: Record<string, TypeExpr>,
+    values: Record<string, any>,
+): any {
+    const refSlice = slice.loadRef().beginParse(true);
+    try {
+        return parseExpr(refSlice, expr.expr, program, env, values);
+    } catch (e: any) {
+        if (e instanceof ParseError) {
+            return { ...e.partial, _error: e.message, _remaining: e.remaining.clone() };
+        }
+        return { _error: String(e), _remaining: refSlice.clone() };
+    }
+}
+
+function handleBuiltinOneArgExpr(
+    slice: Slice,
+    expr: BuiltinOneArgExpr,
+    program: Program,
+    env: Record<string, TypeExpr>,
+    values: Record<string, any>,
+): any {
+    if (expr.name === '##' && expr.arg instanceof NumberExpr) {
+        return slice.loadUintBig(expr.arg.num);
+    }
+    if (expr.name === '#<' || expr.name === '#<=') {
+        let limit: number;
+        if (expr.arg instanceof NumberExpr) {
+            limit = expr.arg.num;
+        } else {
+            const v = parseExpr(slice.clone(), expr.arg, program, env, values);
+            limit = typeof v === 'bigint' ? Number(v) : Number(v);
+        }
+        const bits = Math.ceil(Math.log2(limit + (expr.name === '#<' ? 0 : 1)));
+        return slice.loadUintBig(bits);
+    }
+    return undefined;
+}
+
+function handleCombinatorExpr(
+    slice: Slice,
+    expr: CombinatorExpr,
+    program: Program,
+    env: Record<string, TypeExpr>,
+    values: Record<string, any>,
+): any {
+    if ((expr.name === 'uint' || expr.name === 'int' || expr.name === 'bits') && expr.args.length === 1) {
+        const bits = Number(evalNumericExpr(expr.args[0], env, values));
+        if (expr.name === 'uint') {
+            return slice.loadUintBig(bits);
+        } else if (expr.name === 'int') {
+            return slice.loadIntBig(bits);
+        } else {
+            return slice.loadBits(bits).toString();
+        }
+    }
+    const args = expr.args.map(a => resolveTypeExpr(a, env));
+    return parseByType(slice, expr.name, program, args, env);
+}
+
+function handleBitStringMathExpr(
+    slice: Slice,
+    expr: MathExpr,
+    program: Program,
+    env: Record<string, TypeExpr>,
+    values: Record<string, any>,
+): any {
+    const len = Number(evalNumericExpr(expr.left, env, values));
+    return slice.loadBits(len).toString();
+}
+
+function handleNameExpr(
+    slice: Slice,
+    expr: NameExpr,
+    program: Program,
+    env: Record<string, TypeExpr>,
+    values: Record<string, any>,
+): any {
+    const n = expr.name;
+    if (env[n]) {
+        return parseExpr(slice, env[n], program, env, values);
+    }
+    if (Object.prototype.hasOwnProperty.call(values, n)) {
+        return values[n];
+    }
+    if (n.startsWith('int')) {
+        const b = parseInt(n.slice(3), 10);
+        if (!isNaN(b)) return slice.loadIntBig(b);
+    }
+    if (n.startsWith('uint')) {
+        const b = parseInt(n.slice(4), 10);
+        if (!isNaN(b)) return slice.loadUintBig(b);
+    }
+    if (n.startsWith('bits')) {
+        const b = parseInt(n.slice(4), 10);
+        if (!isNaN(b)) return slice.loadBits(b).toString();
+    }
+    if (n === 'Bool') {
+        return slice.loadBit();
+    }
+    if (n === 'Cell' || n === 'Any') {
+        return slice;
+    }
+    return parseByType(slice, n, program, [], env);
+}
+
+function handleNumberExpr(expr: NumberExpr): any {
+    return expr.num;
+}
+
+function handleBuiltinZeroArgs(slice: Slice, expr: BuiltinZeroArgs): any {
+    if (expr.name == '#') {
+        // # is an alias for uint32
+        return slice.loadUint(32);
+    }
+    return undefined;
+}
+
 function parseExpr(
     slice: Slice,
     expr: CondExpr | TypeExpr,
@@ -287,108 +439,31 @@ function parseExpr(
     values: Record<string, any> = {},
 ): any {
     try {
-        if (expr instanceof CondExpr) {
-            let condValue: any;
-            if (expr.left instanceof NameExpr && Object.prototype.hasOwnProperty.call(values, expr.left.name)) {
-                condValue = values[expr.left.name];
-            } else {
-                condValue = parseExpr(slice, expr.left, program, env, values);
-            }
-            let flag: boolean;
-            if (expr.dotExpr !== null && expr.dotExpr !== undefined) {
-                try {
-                    const num = BigInt(condValue);
-                    flag = ((num >> BigInt(expr.dotExpr)) & 1n) === 1n;
-                } catch {
-                    flag = false;
-                }
-            } else {
-                flag = Boolean(condValue);
-            }
-            if (!flag) {
-                return undefined;
-            }
-            return parseExpr(slice, expr.condExpr, program, env, values);
-        }
-        if (expr instanceof CellRefExpr) {
-            const refSlice = slice.loadRef().beginParse(true);
-            try {
-                return parseExpr(refSlice, expr.expr, program, env, values);
-            } catch (e: any) {
-                if (e instanceof ParseError) {
-                    return { ...e.partial, _error: e.message, _remaining: e.remaining.clone() };
-                }
-                return { _error: String(e), _remaining: refSlice.clone() };
-            }
-        }
-        if (expr instanceof BuiltinOneArgExpr) {
-            if (expr.name === '##' && expr.arg instanceof NumberExpr) {
-                return slice.loadUintBig(expr.arg.num);
-            }
-            if (expr.name === '#<' || expr.name === '#<=') {
-                let limit: number;
-                if (expr.arg instanceof NumberExpr) {
-                    limit = expr.arg.num;
-                } else {
-                    const v = parseExpr(slice.clone(), expr.arg, program, env, values);
-                    limit = typeof v === 'bigint' ? Number(v) : Number(v);
-                }
-                const bits = Math.ceil(Math.log2(limit + (expr.name === '#<' ? 0 : 1)));
-                return slice.loadUintBig(bits);
-            }
-        }
-        if (expr instanceof CombinatorExpr) {
-            if ((expr.name === 'uint' || expr.name === 'int' || expr.name === 'bits') && expr.args.length === 1) {
-                const bits = Number(evalNumericExpr(expr.args[0], env, values));
-                if (expr.name === 'uint') {
-                    return slice.loadUintBig(bits);
-                } else if (expr.name === 'int') {
-                    return slice.loadIntBig(bits);
-                } else {
-                    return slice.loadBits(bits).toString();
-                }
-            }
-            const args = expr.args.map(a => resolveTypeExpr(a, env));
-            return parseByType(slice, expr.name, program, args, env);
-        }
         if (expr instanceof MathExpr && expr.op === '*' && expr.right instanceof NameExpr && expr.right.name === 'Bit') {
-            const len = Number(evalNumericExpr(expr.left, env, values));
-            return slice.loadBits(len).toString();
+            return handleBitStringMathExpr(slice, expr, program, env, values);
         }
-        if (expr instanceof NameExpr) {
-            const n = expr.name;
-            if (env[n]) {
-                return parseExpr(slice, env[n], program, env, values);
+
+        switch (true) {
+            case expr instanceof CondExpr:
+                return handleCondExpr(slice, expr as CondExpr, program, env, values);
+            case expr instanceof CellRefExpr:
+                return handleCellRefExpr(slice, expr as CellRefExpr, program, env, values);
+            case expr instanceof BuiltinOneArgExpr: {
+                const r = handleBuiltinOneArgExpr(slice, expr as BuiltinOneArgExpr, program, env, values);
+                if (r !== undefined) return r;
+                break;
             }
-            if (Object.prototype.hasOwnProperty.call(values, n)) {
-                return values[n];
+            case expr instanceof CombinatorExpr:
+                return handleCombinatorExpr(slice, expr as CombinatorExpr, program, env, values);
+            case expr instanceof NameExpr:
+                return handleNameExpr(slice, expr as NameExpr, program, env, values);
+            case expr instanceof NumberExpr:
+                return handleNumberExpr(expr as NumberExpr);
+            case expr instanceof BuiltinZeroArgs: {
+                const r = handleBuiltinZeroArgs(slice, expr as BuiltinZeroArgs);
+                if (r !== undefined) return r;
+                break;
             }
-            if (n.startsWith('int')) {
-                const b = parseInt(n.slice(3), 10);
-                if (!isNaN(b)) return slice.loadIntBig(b);
-            }
-            if (n.startsWith('uint')) {
-                const b = parseInt(n.slice(4), 10);
-                if (!isNaN(b)) return slice.loadUintBig(b);
-            }
-            if (n.startsWith('bits')) {
-                const b = parseInt(n.slice(4), 10);
-                if (!isNaN(b)) return slice.loadBits(b).toString();
-            }
-            if (n === 'Bool') {
-                return slice.loadBit();
-            }
-            if (n === 'Cell' || n === 'Any') {
-                return slice;
-            }
-            return parseByType(slice, n, program, [], env);
-        }
-        if (expr instanceof NumberExpr) {
-            return expr.num;
-        }
-        if (expr instanceof BuiltinZeroArgs && expr.name == '#') {
-            // # is an alias for uint32
-            return slice.loadUint(32);
         }
         throw new Error(`Unsupported expression ${expr.constructor.name} (${JSON.stringify(expr, (k, v) => k == "parent" ? undefined : v)}) at ${expr.locations.line}:${expr.locations.column}`);
     } catch (e: any) {
