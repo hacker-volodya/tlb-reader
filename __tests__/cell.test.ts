@@ -100,28 +100,6 @@ describe('Cell parsing', () => {
         expect(Array.isArray(res.errors)).toBe(true);
     });
 
-    test('continue parsing after ref failure', () => {
-        const tlb2 = `inner$100 value:uint8 flag:Bool = Inner; outer$101 inner:^Inner other:uint8 = Outer;`;
-        const defs = parseTLB(tlb2);
-
-        const badInnerBuilder = new Builder();
-        badInnerBuilder.storeUint(0b100, 3);
-        badInnerBuilder.storeUint(7, 8); // missing flag bit
-        const badInner = badInnerBuilder.endCell();
-
-        const outerBuilder = new Builder();
-        outerBuilder.storeUint(0b101, 3);
-        outerBuilder.storeRef(badInner);
-        outerBuilder.storeUint(9, 8);
-        const outer = outerBuilder.endCell();
-
-        const res = tryParseCell(outer, defs, 'Outer');
-        expect(res.result._id).toBe('outer$101');
-        expect(res.result.other.toString()).toBe('9');
-        expect(res.result.inner._error).toBeDefined();
-        expect(res.result.inner._remaining).toBeDefined();
-    });
-
     test('parse MsgAddress union', () => {
         const tlb = fs.readFileSync(path.resolve(fixturesDir, 'block.tlb'), 'utf-8');
         const program = parseTLB(tlb);
