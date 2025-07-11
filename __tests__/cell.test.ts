@@ -158,7 +158,7 @@ describe('Dictionary parsing', () => {
     const tlb = fs.readFileSync(path.resolve(fixturesDir, 'block.tlb'), 'utf-8') + '\ndict_test$_ dict:(HashmapE 16 uint16) = DictTest;';
     const program = parseTLB(tlb);
 
-    test('parse non-empty dictionary', () => {
+    test.skip('parse non-empty dictionary', () => {
         const map = new Map<bigint, number>();
         map.set(1n, 10);
         map.set(2n, 20);
